@@ -1,15 +1,49 @@
 import hashlib
 import customtkinter as ctk
 import tkinter.messagebox as tkmb
+# import psycopg2
+#
+# try:
+#     # Connect to the database
+#     connection = psycopg2.connect(
+#         host="4.234.56.16",
+#         port="5432",
+#         database="CSC-Mohammed-01",
+#         user="postgres",
+#         password="mggfgg55"
+#     )
+#     print("Connection successful!")
+#
+#     # Create a cursor object
+#     cursor = connection.cursor()
+#
+#     # Execute a query
+#     cursor.execute("SELECT * FROM accounts;")
+#     rows = cursor.fetchall()
+#
+#     # Print each row
+#     for row in rows:
+#         print(row)
+#
+# except Exception as error:
+#     print(f"Error: {error}")
+#
+# finally:
+#     # Ensure connection is closed
+#     if cursor:
+#         cursor.close()
+#     if connection:
+#         connection.close()
+#         print("Connection closed.")
 
 
 # File-based authentication system
-def validate_login(username, password):
+def login(username, password):
     try:
-        with open('accounts.txt', 'r') as account_file:
+        with open('accounts.txt', 'r') as account:
             accounts = {
                 line.strip().split(';')[0]: line.strip().split(';')[1]
-                for line in account_file.readlines()
+                for line in account.readlines()
             }
     except FileNotFoundError:
         accounts = {}
@@ -20,10 +54,10 @@ def validate_login(username, password):
 
 def create_account(username, password):
     try:
-        with open('accounts.txt', 'r') as account_file:
+        with open('accounts.txt', 'r') as account:
             accounts = {
                 line.strip().split(';')[0]
-                for line in account_file.readlines()
+                for line in account.readlines()
             }
     except FileNotFoundError:
         accounts = set()
@@ -32,14 +66,14 @@ def create_account(username, password):
         return False, "Deze gebruikersnaam is al in gebruik."
 
     hashed_password = hashlib.sha1(password.encode('utf-8')).hexdigest()
-    with open('accounts.txt', 'a') as account_file:
-        account_file.write(f"{username};{hashed_password}\n")
+    with open('accounts.txt', 'a') as account:
+        account.write(f"{username};{hashed_password}\n")
 
     return True, "Het account is succesvol aangemaakt!"
 
 
 # Tkinter-based UI
-def launch_dashboard():
+def dashboard():
     dashboard = ctk.CTkToplevel()
     dashboard.geometry("1300x700")
     dashboard.title("Dashboard")
@@ -60,15 +94,15 @@ def login_action():
     username = user_entry.get()
     password = user_pass.get()
 
-    if validate_login(username, password):
+    if login(username, password):
         tkmb.showinfo("Succes", "Je bent succesvol ingelogd!")
         app.withdraw()  # Hide the login window
-        launch_dashboard()
+        dashboard()
     else:
         tkmb.showerror("Fout", "Onjuiste gebruikersnaam of wachtwoord!")
 
 
-def signup_action():
+def signup():
     username = user_entry.get()
     password = user_pass.get()
 
@@ -100,7 +134,7 @@ ctk.set_default_color_theme("blue")
 
 app = ctk.CTk()
 app.geometry("400x400")
-app.title("Modern Login UI with File-Based Authentication")
+app.title("Steam login")
 
 frame = ctk.CTkFrame(master=app)
 frame.pack(pady=20, padx=40, fill="both", expand=True)
@@ -118,7 +152,7 @@ user_pass.pack(pady=12, padx=10)
 login_button = ctk.CTkButton(master=frame, text="Login", command=login_action)
 login_button.pack(pady=12, padx=10)
 
-signup_button = ctk.CTkButton(master=frame, text="Registreren", command=signup_action)
+signup_button = ctk.CTkButton(master=frame, text="Registreren", command=signup)
 signup_button.pack(pady=12, padx=10)
 
 app.mainloop()
