@@ -1,89 +1,892 @@
-from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
-import sys
-from PyQt5.QtGui import QIcon
-from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt
+import hashlib
+import shutil
+
+import customtkinter as ctk
+import tkinter.messagebox as tkmb
+import psycopg2
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QListWidget, QStackedWidget, QPushButton, QLineEdit, QTableWidget,
+    QTableWidgetItem, QMessageBox, QHeaderView, QSizePolicy, QFileDialog, QSplitter,
+)
+from PyQt5.QtGui import QFont, QIcon, QBrush, QPainter, QPainterPath
 from PyQt5.QtGui import QPixmap
-import sqlite3
+from PyQt5.QtCore import Qt
 
-# Connect to the database (or create one if it doesn't exist)
-conn = sqlite3.connect('Steam.db')
-
-# Create a cursor object
+connection_string = "host='4.234.56.16' dbname='Steam' user='postgres' password='mggfgg55'"
+conn = psycopg2.connect(connection_string)
 cursor = conn.cursor()
 
-# Create a table
-# cursor.execute('''
-# -- Tabel voor vriendenrelaties tussen gebruikers
-# -- Optioneel: Tabel voor gedeelde games tussen vrienden
-# CREATE TABLE shared_games (
-#     sharednr INTEGER PRIMARY KEY AUTOINCREMENT,   -- Uniek ID voor gedeelde games
-#     friendnr INT NOT NULL,                    -- Verwijzing naar een vriendschap
-#     librarynr INT NOT NULL,                        -- Verwijzing naar een game in de bibliotheek
-#     FOREIGN KEY (friendnr) REFERENCES friends(friendnr) ON DELETE CASCADE,
-#     FOREIGN KEY (librarynr) REFERENCES library(librarynr) ON DELETE CASCADE
-# );
-#
-#
-#
-#
-#
-#
-# ''')
-
-# Insert data
-# cursor.execute('INSERT INTO accounts (username, password) VALUES (?, ?)', ('Hitsss12', 'Hitsss12'))
-# cursor.execute('INSERT INTO accounts (username, password) VALUES (?, ?)', ('Bob123456', 'Bob123456'))
-
-# Commit changes
-conn.commit()
-
-# Query data
-cursor.execute('SELECT * FROM accounts')
-rows = cursor.fetchall()
-
-# Print results
-print("Users in the database:")
-for row in rows:
-    print(row)
-
-# Close the connection
-conn.close()
+import os
 
 
+class SteamApp(QMainWindow):
+    def __init__(self, accountnr):
+        super().__init__()
+        self.accountnr = accountnr  # het account nr waarmee is ingelogd zodat alle data opgehaald kan worden
+        self.setWindowTitle('Steam')
+        self.setGeometry(0, 0, 1300, 700)
+        self.setWindowIcon(QIcon('steamround.png'))
+        self.setStyleSheet('background-color: #293e4f')
+
+        central_widget = QWidget(self)
+        self.setCentralWidget(central_widget)
+
+        main_layout = QHBoxLayout()
+        central_widget.setLayout(main_layout)
+
+        # het logo
+        labelpic = QLabel(self)
+        labelpic.setFixedSize(100, 100)
+        pixmap = QPixmap('./steamround.png').scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+        if os.path.exists('./steamround.png') and not pixmap.isNull():
+            labelpic.setPixmap(pixmap)
+            labelpic.setScaledContents(True)
+            labelpic.setVisible(True)
+        else:
+            print("Pixmap failed to load. Check the file path.")
+
+        labelpic.move(10, 10)
+
+        # de navigation bar, dus om naar andere pages te komen
+        self.navigation = QListWidget()
+        self.navigation.addItems(['Home', 'Library', 'Games', 'Friends', 'Profile'])
+        self.navigation.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        self.navigation.setFixedHeight(300)
+        self.navigation.setFixedWidth(200)
+        self.navigation.currentRowChanged.connect(self.display_page)
+        main_layout.addWidget(self.navigation)
+
+        self.content_area = QStackedWidget()
+        main_layout.addWidget(self.content_area)
+
+        # de pages zelf
+        self.library_page = self.library_page()
+        self.games_page = self.games_page()
+        self.friends_page = self.friends_page()
+        self.profile_page = self.profile_page()
+
+        self.content_area.addWidget(QWidget())
+        self.content_area.addWidget(self.library_page)
+        self.content_area.addWidget(self.games_page)
+        self.content_area.addWidget(self.friends_page)
+        self.content_area.addWidget(self.profile_page)
+
+    def create_page(self, title, description):
+        page = QWidget()
+        layout = QVBoxLayout()
+        page.setLayout(layout)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-size: 30px; font-weight: bold; color: white;")
+        description_label = QLabel(description)
+        description_label.setStyleSheet("font-size: 20px; color: white;")
+
+        layout.addWidget(title_label)
+        layout.addWidget(description_label)
+        return page
+
+    def library_page(self):
+        page = QWidget()
+        layout = QVBoxLayout()
+        page.setLayout(layout)
+
+        # dit is de search box om de games op te zoeken
+        search_box = QLineEdit()
+        search_box.setPlaceholderText("Enter game name to search")
+        search_box.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+
+                """)
+        layout.addWidget(search_box)
+
+        # het knopje voor het zoeken
+        search_button = QPushButton("Search")
+        search_button.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white; 
+            background-color: #293e4f;
+
+        """)
+        layout.addWidget(search_button)
+
+        # dit zijn alle results
+        results_table = QTableWidget()
+        results_table.setColumnCount(1)
+        results_table.setHorizontalHeaderLabels(["Game Name"])
+        results_table.setFont(QFont("Arial", 15))
+
+        # hiermee ziet het er een beetje goed uit
+        results_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #293e4f; 
+                color: white; 
+            }
+            QHeaderView::section {
+                background-color: #1f2a38; 
+                color: white; 
+                font-weight: bold; 
+            }
+            QTableWidget::item {
+                background-color: #293e4f; 
+                color: white; 
+            }
+        """)
+
+        # hierdoor is het allemaal mooi gestretched
+        results_table.horizontalHeader().setStretchLastSection(True)
+        results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        results_table.verticalHeader().setVisible(False)
+        results_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        layout.addWidget(results_table)
+
+        # hier kan je de uren erin zetten
+        hours_input = QLineEdit()
+        hours_input.setPlaceholderText("Enter hours played")
+        hours_input.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white; 
+            background-color: #293e4f;
+
+        """)
+        layout.addWidget(hours_input)
+
+        # dit is de button die de game add
+        add_button = QPushButton("Add Selected Game")
+        add_button.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white; 
+            background-color: #293e4f;
+
+        """)
+        layout.addWidget(add_button)
+
+        # hiermee kan je je library zien
+        view_library_button = QPushButton("View Library")
+        view_library_button.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white; 
+            background-color: #293e4f;
+
+        """)
+        layout.addWidget(view_library_button)
+
+        # dit is de table van je library die je dan ziet
+        library_table = QTableWidget()
+        library_table.setColumnCount(2)
+        library_table.setHorizontalHeaderLabels(["Game Name", "Hours Played"])
+        library_table.setStyleSheet("""
+                    QTableWidget {
+                        background-color: #293e4f; 
+                        color: white; 
+                    }
+                    QHeaderView::section {
+                        background-color: #1f2a38; 
+                        color: white; 
+                        font-weight: bold; 
+                    }
+                    QTableWidget::item {
+                        background-color: #293e4f; 
+                        color: white; 
+                    }
+               """)
+        layout.addWidget(library_table)
+
+        library_table.horizontalHeader().setStretchLastSection(True)
+        library_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        library_table.verticalHeader().setVisible(False)
+        library_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        layout.addWidget(library_table)
+
+        # hier worden de knoppen ook aan de acties gelinkt
+        search_button.clicked.connect(lambda: self.search_games(search_box, results_table))
+        add_button.clicked.connect(lambda: self.add_game(results_table, hours_input))
+        view_library_button.clicked.connect(lambda: self.view_library(library_table))
+
+        return page
+
+    def games_page(self):
+        page = QWidget()
+        layout = QVBoxLayout()
+        page.setLayout(layout)
+
+        # weer de search box
+        search_box = QLineEdit()
+        search_box.setPlaceholderText("Enter game name to search")
+        search_box.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+
+                """)
+        layout.addWidget(search_box)
+
+        # weer de search button
+        search_button = QPushButton("Search")
+        search_button.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+
+                """)
+        layout.addWidget(search_button)
+
+        # de results table
+        results_table = QTableWidget()
+        results_table.setColumnCount(1)
+        results_table.setHorizontalHeaderLabels(["Game Name"])
+        results_table.setStyleSheet("""
+                            QTableWidget {
+                                background-color: #293e4f; 
+                                color: white; 
+                            }
+                            QHeaderView::section {
+                                background-color: #1f2a38; 
+                                color: white; 
+                                font-weight: bold; 
+                            }
+                            QTableWidget::item {
+                                background-color: #293e4f; 
+                                color: white; 
+                            }
+                       """)
+        layout.addWidget(results_table)
+
+        results_table.horizontalHeader().setStretchLastSection(True)
+        results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        results_table.verticalHeader().setVisible(False)
+        results_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # connection tussen button en actie
+        search_button.clicked.connect(lambda: self.search_games(search_box, results_table))
+
+        return page
+
+    def friends_page(self):
+        page = QWidget()
+        main_layout = QVBoxLayout(page)
+
+        # hiermee kan je de username van user invoeren
+        username_input = QLineEdit()
+        username_input.setPlaceholderText("Enter friend's username")
+        username_input.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white; 
+            background-color: #293e4f;
+        """)
+        main_layout.addWidget(username_input)
+
+        # knop om friends te adden
+        add_friend_button = QPushButton("Add Friend")
+        add_friend_button.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white; 
+            background-color: #293e4f;
+        """)
+        main_layout.addWidget(add_friend_button)
+
+        # friends list
+        friends_table = QTableWidget()
+        friends_table.setColumnCount(1)
+        friends_table.setHorizontalHeaderLabels(["Username"])
+        friends_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #293e4f; 
+                color: white; 
+            }
+            QHeaderView::section {
+                background-color: #1f2a38; 
+                color: white; 
+                font-weight: bold; 
+            }
+            QTableWidget::item {
+                background-color: #293e4f; 
+                color: white; 
+            }
+        """)
+        friends_table.horizontalHeader().setStretchLastSection(True)
+        friends_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        friends_table.verticalHeader().setVisible(False)
+        main_layout.addWidget(friends_table)
+
+        # hiermee kan je de library van je friend zien
+        view_library_button = QPushButton("View Friend's Library")
+        view_library_button.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white; 
+            background-color: #293e4f;
+        """)
+        main_layout.addWidget(view_library_button)
+
+        # library content
+        library_table = QTableWidget()
+        library_table.setColumnCount(2)
+        library_table.setHorizontalHeaderLabels(["Game Name", "Hours Played"])
+        library_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #293e4f; 
+                color: white; 
+            }
+            QHeaderView::section {
+                background-color: #1f2a38; 
+                color: white; 
+                font-weight: bold; 
+            }
+            QTableWidget::item {
+                background-color: #293e4f; 
+                color: white; 
+            }
+        """)
+        library_table.horizontalHeader().setStretchLastSection(True)
+        library_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        library_table.verticalHeader().setVisible(False)
+        main_layout.addWidget(library_table)
 
 
+        main_layout.setStretch(0, 1)
+        main_layout.setStretch(1, 1)
+        main_layout.setStretch(2, 3)
+        main_layout.setStretch(3, 1)
+        main_layout.setStretch(4, 3)
 
-class MainWindow(QMainWindow):
+        # Connect buttons to actions
+        add_friend_button.clicked.connect(lambda: self.add_friend(username_input, friends_table))
+        view_library_button.clicked.connect(lambda: self.view_friend_library(friends_table, library_table))
+
+        self.view_friends(friends_table)
+
+        return page
+
+    def profile_page(self):
+        page = QWidget()
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignTop)
+        page.setLayout(layout)
+
+        # layout van avatar en username
+        avatar_layout = QHBoxLayout()
+        avatar_layout.setAlignment(Qt.AlignLeft)
+
+        # avatar
+        self.avatar_label = QLabel()
+        self.avatar_label.setFixedSize(100, 100)
+
+        self.load_avatar()  # hier load hij een al bestaande avatar of nieuwe avatar
+        avatar_layout.addWidget(self.avatar_label)
+
+        # dit is de username die wordt opgehaald
+        username = self.fetch_username()
+        username_label = QLabel(f"Welcome, {username}")
+        username_label.setStyleSheet("font-size: 25px; font-weight: bold; color: white;")
+        avatar_layout.addWidget(username_label)
+
+        layout.addLayout(avatar_layout)
+
+        # knop voor de avatar om te uploaden
+        upload_avatar_button = QPushButton("Upload Avatar")
+        upload_avatar_button.setIcon(QIcon("upload_icon.png"))
+        upload_avatar_button.setStyleSheet("""
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #3a4e5f;
+            border-radius: 10px;
+            padding: 10px;
+        """)
+        upload_avatar_button.clicked.connect(self.upload_avatar)
+        layout.addWidget(upload_avatar_button)
+
+        layout.addSpacing(20)
+
+        title_label = QLabel("Profile Settings")
+        title_label.setStyleSheet("font-size: 30px; font-weight: bold; color: white;")
+        layout.addWidget(title_label, alignment=Qt.AlignCenter)
+
+        # hiermee verander je je password
+        password_label = QLabel("Change Password:")
+        password_label.setStyleSheet("font-size: 20px; color: white;")
+        layout.addWidget(password_label)
+
+        password_input = QLineEdit()
+        password_input.setPlaceholderText("Enter new password")
+        password_input.setEchoMode(QLineEdit.Password)
+        password_input.setStyleSheet("""
+            font-size: 18px;
+            color: white;
+            background-color: #1f2a38;
+            border-radius: 10px;
+            padding: 10px;
+        """)
+        layout.addWidget(password_input)
+
+        change_password_button = QPushButton("Change Password")
+        change_password_button.setIcon(QIcon("lock_icon.png"))
+        change_password_button.setStyleSheet("""
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #3a4e5f;
+            border-radius: 10px;
+            padding: 10px;
+        """)
+        layout.addWidget(change_password_button)
+
+        # knop om uit te loggen
+        logout_button = QPushButton("Logout")
+        logout_button.setIcon(QIcon("logout_icon.png"))
+        logout_button.setStyleSheet("""
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            background-color: #d9534f;
+            border-radius: 10px;
+            padding: 10px;
+        """)
+        layout.addWidget(logout_button)
+
+        change_password_button.clicked.connect(lambda: self.change_password(password_input))
+        logout_button.clicked.connect(self.logout)
+
+        return page
+
+    def load_avatar(self):
+        avatar_path = f"./avatars/user_{self.accountnr}.png"
+        if os.path.exists(avatar_path):
+            pixmap = QPixmap(avatar_path)
+        else:
+            pixmap = QPixmap("./default_avatar.png")
+
+        # hier wordt de avatar geresized
+        pixmap = pixmap.scaled(self.avatar_label.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+
+        # hier wordt hij rond gemaakt
+        mask = QPixmap(self.avatar_label.size())
+        mask.fill(Qt.transparent)
+
+        painter = QPainter(mask)
+        painter.setRenderHint(QPainter.Antialiasing)
+        path = QPainterPath()
+        path.addEllipse(0, 0, self.avatar_label.width(), self.avatar_label.height())
+        painter.setBrush(QBrush(pixmap))
+        painter.setClipPath(path)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.end()
+
+        self.avatar_label.setPixmap(mask)
+
+    def upload_avatar(self):
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Avatar", "", "Image Files (*.png *.jpg *.jpeg)",
+                                                   options=options)
+
+        if file_path:
+            if not os.path.exists("./avatars"):
+                os.makedirs("./avatars")
+
+            # hier wordt de avatar gesaved
+            new_avatar_path = f"./avatars/user_{self.accountnr}.png"
+            shutil.copy(file_path, new_avatar_path)
+            self.load_avatar()
+            tkmb.showinfo("Success", "Avatar uploaded successfully!")
+
+    def fetch_username(self):
+        query = "SELECT username FROM accounts WHERE accountnr = %s;"
+        cursor.execute(query, (self.accountnr,))
+        result = cursor.fetchone()
+        if result:
+            return result[0]
+        else:
+            return "User"
+
+    def add_game(self, results_table, hours_input):
+        selected_row = results_table.currentRow()
+        if selected_row == -1:
+            QMessageBox.warning(self, "Error", "Please select a game to add.")
+            return
+
+        # hier wordt de geselecteerde rij gepakt
+        game_name_item = results_table.item(selected_row, 0)
+        if not game_name_item:
+            QMessageBox.warning(self, "Error", "Invalid game selection.")
+            return
+
+        gamenr = game_name_item.data(Qt.UserRole)  # hier wordt de gamenr aan de data gelinkt
+        if gamenr is None:
+            QMessageBox.warning(self, "Error", "Invalid game selection.")
+            return
+
+        # hier kan je de uren opschrijven
+        try:
+            hours = int(hours_input.text())
+            if hours < 0:
+                raise ValueError("Hours cannot be negative.")
+        except ValueError:
+            QMessageBox.warning(self, "Error", "Please enter a valid non-negative number for hours.")
+            return
+
+        try:
+            conn = psycopg2.connect(connection_string)
+            cursor = conn.cursor()
+
+            # hier wordt de game aan de library toegevoegd
+            cursor.execute(
+                """
+                INSERT INTO library (accountnr, gamenr, hours)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (accountnr, gamenr) DO UPDATE
+                SET hours = EXCLUDED.hours
+                """,
+                (self.accountnr, gamenr, hours),
+            )
+            conn.commit()
+            conn.close()
+            QMessageBox.information(self, "Success", "Game added to library successfully!")
+        except psycopg2.Error as e:
+            QMessageBox.warning(self, "Error", f"Could not add game: {e}")
+
+    def search_games(self, search_box, results_table):
+        search_query = search_box.text()
+        if not search_query.strip():
+            QMessageBox.warning(self, "Error", "Please enter a valid game name to search.")
+            return
+
+        try:
+            conn = psycopg2.connect(connection_string)
+            cursor = conn.cursor()
+
+            # hiermee kan je games opzoeken
+            cursor.execute(
+                """
+                SELECT appid, name
+                FROM games
+                WHERE name ILIKE %s
+                """,
+                (f"%{search_query}%",)
+            )
+            search_results = cursor.fetchall()
+            conn.close()
+
+            # hier wordt dan alles laten zien
+            results_table.setRowCount(len(search_results))
+            results_table.setColumnCount(1)
+            results_table.setHorizontalHeaderLabels(["Game Name"])
+            for row, (appid, name) in enumerate(search_results):
+                item = QTableWidgetItem(name)
+                item.setData(Qt.UserRole, appid)
+                results_table.setItem(row, 0, item)
+
+        except psycopg2.Error as e:
+            QMessageBox.warning(self, "Error", f"Error searching games: {e}")
+
+    def add_friend(self, username_input, friends_table):
+        friend_username = username_input.text()
+
+        try:
+            conn = psycopg2.connect(connection_string)
+            cursor = conn.cursor()
+
+            # hier wordt het accountnr opgezocht van de vriend die je wil adden
+            cursor.execute(
+                """
+                SELECT accountnr
+                FROM accounts
+                WHERE username = %s
+                """,
+                (friend_username,),
+            )
+            result = cursor.fetchone()
+
+            if not result:
+                QMessageBox.warning(self, "Error", "No user found with that username.")
+                return
+
+            friend_accountnr = result[0]
+
+            # hier wordt dan je eigen accountnr met het accountnr van je vriend gekoppeld
+            cursor.execute(
+                """
+                INSERT INTO friends (accountnr1, accountnr2)
+                VALUES (%s, %s)
+                ON CONFLICT DO NOTHING
+                """,
+                (self.accountnr, friend_accountnr),
+            )
+            conn.commit()
+            conn.close()
+
+            QMessageBox.information(self, "Success", f"{friend_username} has been added as a friend!")
+            self.view_friends(friends_table)  # hier wordt de friendlist geupdate
+
+        except psycopg2.Error as e:
+            QMessageBox.warning(self, "Error", f"Could not add friend: {e}")
+
+    def view_friends(self, friends_table):
+        try:
+            conn = psycopg2.connect(connection_string)
+            cursor = conn.cursor()
+
+            # hiermee kan je vrienden op username opzoeken
+            cursor.execute(
+                """
+                SELECT a.username
+                FROM friends f
+                JOIN accounts a ON f.accountnr2 = a.accountnr
+                WHERE f.accountnr1 = %s
+                """,
+                (self.accountnr,)
+            )
+            friends = cursor.fetchall()
+            conn.close()
+
+            # hier worden dan de vrienden neergezet
+            friends_table.setRowCount(len(friends))
+            friends_table.setHorizontalHeaderLabels(["Username"])
+            for row, (username,) in enumerate(friends):
+                friends_table.setItem(row, 0, QTableWidgetItem(username))
+
+        except psycopg2.Error as e:
+            QMessageBox.warning(self, "Error", f"Error loading friends list: {e}")
+
+    def view_library(self, library_table):
+        try:
+            conn = psycopg2.connect(connection_string)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.name, l.hours
+                FROM library l
+                JOIN games g ON l.gamenr = g.appid
+                WHERE l.accountnr = %s
+                """,
+                (self.accountnr,)
+            )
+            library_results = cursor.fetchall()
+            conn.close()
+
+            library_table.setColumnCount(2)
+            library_table.setHorizontalHeaderLabels(["Game Name", "Hours Played"])
+            library_table.setRowCount(len(library_results))
+            for row, (gamename, hours) in enumerate(library_results):
+                library_table.setItem(row, 0, QTableWidgetItem(gamename))
+                library_table.setItem(row, 1, QTableWidgetItem(str(hours)))
+
+        except psycopg2.Error as e:
+            QMessageBox.warning(self, "Error", f"Error loading library: {e}")
+
+    def view_friend_library(self, friends_table, library_table):
+        # hier wordt ervoor gezorgd dat er iemand is geselecteerd
+        selected_row = friends_table.currentRow()
+        if selected_row == -1:
+            QMessageBox.warning(self, "Error", "Please select a friend to view their library.")
+            return
+
+        friend_username = friends_table.item(selected_row, 0).text().strip()
+        if not friend_username:
+            QMessageBox.warning(self, "Error", "Invalid friend selection.")
+            return
+
+        try:
+            conn = psycopg2.connect(connection_string)
+            cursor = conn.cursor()
+
+            # hier wordt de library van de friend geladen
+            cursor.execute(
+                """
+                SELECT g.name, l.hours
+                FROM library l
+                JOIN games g ON l.gamenr = g.appid
+                WHERE l.accountnr = (
+                    SELECT accountnr
+                    FROM accounts
+                    WHERE username = %s
+                )
+                """,
+                (friend_username,)
+            )
+            friend_library = cursor.fetchall()
+            conn.close()
+
+            # hier wordt dan de library van de friend gedisplayed
+            library_table.setRowCount(len(friend_library))
+            library_table.setColumnCount(2)
+            library_table.setHorizontalHeaderLabels(["Game Name", "Hours Played"])
+            for row, (game_name, hours) in enumerate(friend_library):
+                library_table.setItem(row, 0, QTableWidgetItem(game_name))
+                library_table.setItem(row, 1, QTableWidgetItem(str(hours)))
+
+            if not friend_library:
+                QMessageBox.information(self, "Info", f"{friend_username} has no games in their library.")
+
+        except psycopg2.Error as e:
+            QMessageBox.warning(self, "Error", f"Error loading friend's library: {e}")
+
+    def display_page(self, index):
+        self.content_area.setCurrentIndex(index)
+
+    def logout(self):
+        print("Logging out...")
+        self.close()
+
+    def change_password(self, password_input):
+        new_password = password_input.text()
+
+        if not new_password:
+            QMessageBox.critical(self, "Error", "Password cannot be empty.")
+            return
+
+        # hier wordt het nieuwe password gechecked
+        if (
+                len(new_password) < 8
+                or not any(char.isdigit() for char in new_password)
+                or not any(char.isupper() for char in new_password)
+        ):
+            QMessageBox.critical(
+                self,
+                "Error",
+                "Password must:\n"
+                "- Be at least 8 characters long\n"
+                "- Contain at least 1 digit and 1 uppercase letter",
+            )
+            return
+
+        hashed_password = hashlib.sha1(new_password.encode('utf-8')).hexdigest()
+
+        # hier wordt het password geupdate
+        update_query = "UPDATE accounts SET passwordhash = %s WHERE accountnr = %s;"
+        try:
+            cursor.execute(update_query, (hashed_password, self.accountnr))
+            conn.commit()
+            QMessageBox.information(self, "Success", "Password changed successfully!")
+            password_input.clear()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to change password: {str(e)}")
+
+
+# dit is de login page
+class LoginPage(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Steam')
-        self.setGeometry(0, 0, 500, 500)
-        self.setWindowIcon(QIcon('steam.png'))
+        self.geometry("400x400")
+        self.title("Steam Login")
+        self.iconbitmap("steam_logo_round.ico")
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
 
-        label = QLabel('Home', self)
-        label.setFont(QFont('Arial', 20))
-        label.setGeometry(0, 0, 500, 100)
-        label.setStyleSheet('background-color: #1e3966;'
-                            'font-weight: bold;'
-                            'font-style: italic;')
+        frame = ctk.CTkFrame(master=self)
+        frame.pack(pady=20, padx=40, fill="both", expand=True)
 
-        label.setAlignment(Qt.AlignCenter)
+        ctk.CTkLabel(master=frame, text="Login or Register", font=ctk.CTkFont(size=16)).pack(
+            pady=12, padx=10
+        )
 
-        labelpic = QLabel(self)
-        labelpic.setGeometry(0,0,100,100)
-        pixmap = QPixmap('steam.png')
-        labelpic.setPixmap(pixmap)
-        labelpic.setScaledContents(True)
+        self.user_entry = ctk.CTkEntry(master=frame, placeholder_text="Username")
+        self.user_entry.pack(pady=12, padx=10)
+
+        self.user_pass = ctk.CTkEntry(master=frame, placeholder_text="Password", show="*")
+        self.user_pass.pack(pady=12, padx=10)
+
+        login_button = ctk.CTkButton(master=frame, text="Login", command=self.login_action)
+        login_button.pack(pady=12, padx=10)
+
+        signup_button = ctk.CTkButton(master=frame, text="Register", command=self.signup_action)
+        signup_button.pack(pady=12, padx=10)
+
+    def login_action(self):
+        username = self.user_entry.get()
+        password = self.user_pass.get()
+
+        if self.login(username, password):
+            tkmb.showinfo("Success", "Logged in successfully!")
+
+            # hier wordt de accountnr opgehaald als je goed bent in gelogd
+            accountnr_query = "SELECT accountnr FROM accounts WHERE username = %s;"
+            cursor.execute(accountnr_query, (username,))
+            accountnr = cursor.fetchone()
+
+            if accountnr:
+                self.open_main_app(accountnr[0])
+            else:
+                tkmb.showerror("Error", "Account number not found!")
+        else:
+            tkmb.showerror("Error", "Invalid username or password!")
+
+    def signup_action(self):
+        username = self.user_entry.get()
+        password = self.user_pass.get()
+        # hier wordt er gekeken of het password wel aan alle eisen voldoet
+        if (
+                len(password) < 8
+                or not any(char.isdigit() for char in password)
+                or not any(char.isupper() for char in password)
+        ):
+            tkmb.showerror(
+                "Error",
+                "Password must:\n"
+                "- Be at least 8 characters long\n"
+                "- Contain at least 1 digit and 1 uppercase letter",
+            )
+            return
+
+        success, message = self.create_account(username, password)
+        if success:
+            tkmb.showinfo("Success", message)
+        else:
+            tkmb.showerror("Error", message)
+
+    def login(self, username, password):
+        query = 'SELECT passwordhash FROM accounts WHERE username = %s;'
+        cursor.execute(query, (username,))
+        result = cursor.fetchone()
+
+        if result is None:
+            return False
+
+        hashed_password = hashlib.sha1(password.encode('utf-8')).hexdigest()
+        return result[0] == hashed_password
+
+    def create_account(self, username, password):
+        check_query = 'SELECT username FROM accounts WHERE username = %s;'
+        cursor.execute(check_query, (username,))
+        if cursor.fetchone() is not None:
+            return False, 'Username already exists.'
+
+        hashed_password = hashlib.sha1(password.encode('utf-8')).hexdigest()
+        create_query = 'INSERT INTO accounts (username, passwordhash) VALUES (%s, %s);'
+        cursor.execute(create_query, (username, hashed_password))
+        conn.commit()
+
+        return True, 'Account successfully created!'
+
+    def open_main_app(self, accountnr):
+        self.withdraw()  # hier wordt de login page gesloten en de main app geopend
+        app = QApplication([])
+        main_window = SteamApp(accountnr)
+        main_window.show()
+        app.exec_()
 
 
-
-def main():
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    login_page = LoginPage()
+    login_page.mainloop()
+    conn.close()
