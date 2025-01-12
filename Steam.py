@@ -1,5 +1,7 @@
 import hashlib
 import shutil
+import math
+import matplotlib.pyplot as plt
 
 import customtkinter as ctk
 import tkinter.messagebox as tkmb
@@ -7,11 +9,18 @@ import psycopg2
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QListWidget, QStackedWidget, QPushButton, QLineEdit, QTableWidget,
-    QTableWidgetItem, QMessageBox, QHeaderView, QSizePolicy, QFileDialog, QSplitter, QDateEdit, QTimeEdit, QGroupBox,
+    QTableWidgetItem, QMessageBox, QHeaderView, QSizePolicy, QFileDialog, QDateEdit, QTimeEdit,
 )
-from PyQt5.QtGui import QFont, QIcon, QBrush, QPainter, QPainterPath, QColor
+from PyQt5.QtGui import QFont, QIcon, QBrush, QPainter, QPainterPath
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, QTimer, QDate, QTime
+from matplotlib.backends.backend_template import FigureCanvas
+
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+
+from test import lineare_regressie2
 
 connection_string = "host='4.234.56.16' dbname='Steam' user='postgres' password='mggfgg55'"
 conn = psycopg2.connect(connection_string)
@@ -68,31 +77,45 @@ class SteamApp(QMainWindow):
         main_layout.addWidget(self.content_area)
 
         # de pages zelf
+        self.home_page = self.home_page()
         self.library_page = self.library_page()
         self.games_page = self.games_page()
         self.friends_page = self.friends_page()
         self.sessions_page = self.sessions_page()
         self.profile_page = self.profile_page()
 
-        self.content_area.addWidget(QWidget())
+        self.content_area.addWidget(self.home_page)
         self.content_area.addWidget(self.library_page)
         self.content_area.addWidget(self.games_page)
         self.content_area.addWidget(self.friends_page)
         self.content_area.addWidget(self.sessions_page)
         self.content_area.addWidget(self.profile_page)
 
-    def create_page(self, title, description):
+    def display_home_page(self):
+        home_widget = QWidget()
+        layout = QVBoxLayout(home_widget)
+
+        # Add the plot to the layout
+        layout.addWidget(self.scatter_plot())
+
+        # Set the home widget to be the current page
+        self.content_area.addWidget(home_widget)
+        self.content_area.setCurrentWidget(home_widget)
+
+    def home_page(self):
         page = QWidget()
         layout = QVBoxLayout()
         page.setLayout(layout)
 
-        title_label = QLabel(title)
-        title_label.setStyleSheet("font-size: 30px; font-weight: bold; color: white;")
-        description_label = QLabel(description)
-        description_label.setStyleSheet("font-size: 20px; color: white;")
+        # Welcome label
+        welcome_label = QLabel("Welcome to the Steam App!")
+        welcome_label.setStyleSheet("font-size: 30px; font-weight: bold; color: white;")
+        layout.addWidget(welcome_label)
 
-        layout.addWidget(title_label)
-        layout.addWidget(description_label)
+        # Add the scatter plot to the layout
+        plot_canvas = self.scatter_plot()
+        layout.addWidget(plot_canvas)
+
         return page
 
     def library_page(self):
@@ -305,7 +328,42 @@ class SteamApp(QMainWindow):
         most_played_table.verticalHeader().setVisible(False)
         layout.addWidget(most_played_table)
 
-        # Connect buttons to functions
+        random_games_button = QPushButton("Show Random Games")
+        random_games_button.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+            background-color: #293e4f;
+        """)
+        layout.addWidget(random_games_button)
+
+        # Add Table to Display Random Games
+        random_games_table = QTableWidget()
+        random_games_table.setColumnCount(3)
+        random_games_table.setHorizontalHeaderLabels(["Name", "Release Date", "Price"])
+        random_games_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #293e4f;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #1f2a38;
+                color: white;
+                font-weight: bold;
+            }
+            QTableWidget::item {
+                background-color: #293e4f;
+                color: white;
+            }
+        """)
+        layout.addWidget(random_games_table)
+
+        random_games_table.horizontalHeader().setStretchLastSection(True)
+        random_games_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        random_games_table.verticalHeader().setVisible(False)
+
+        # Connect Button to the Function
+        random_games_button.clicked.connect(lambda: self.fetch_random_games(random_games_table))
         search_button.clicked.connect(lambda: self.search_games(search_box, results_table))
         self.view_most_played_games(most_played_table)
 
@@ -636,6 +694,98 @@ class SteamApp(QMainWindow):
         return page
 
 
+
+    def lineare_regressie1(listX, listY, itterations, learningrate):
+        a = 0
+        b = 0
+        for i in range(itterations):
+            for j in range(len(listX)):
+                error = (a + b * listX[j]) - listY[j]
+                a = a - error * learningrate * 10000
+                b = b - error * learningrate * listX[j]
+        print(error, a, b)
+        return a, b
+
+    def lineare_regressie2(listX, listY, itterations, learningrate):
+        a = 0
+        b = 0
+        for i in range(itterations):
+            errorA = 0
+            errorB = 0
+            SSE = 0
+            for j in range(len(listX)):
+                errorA = errorA + 2 * a + 2 * b * listX[j] - 2 * listY[j]
+                errorB = errorB + 2 * a * listX[j] - 2 * listY[j] * listX[j] + 2 * b * listX[j] ** 2
+                SSE = SSE + ((a + b * listX[j]) - listY[j]) ** 2
+            if abs(errorA) > 10:
+                a = a - errorA * learningrate
+            if abs(errorB) > 100000:
+                b = b - min(abs(SSE / errorB), abs(errorB)) * errorB / abs(errorB) * learningrate
+        return a, b
+
+    def scatter_plot(self):
+        # Create a Matplotlib figure and axis
+        figure = Figure()
+        ax = figure.add_subplot(111)
+
+        # Data retrieval from the database
+        owners = []
+        ratio = []
+        release_date = []
+        query = """
+            SELECT appid, name, release_date, positive_ratings, negative_ratings, owners, price
+            FROM games
+            WHERE positive_ratings > 0 AND (negative_ratings + positive_ratings > 50)
+        """
+        cursor.execute(query)
+        data = cursor.fetchall()
+
+        # Process the data for plotting
+        for game in data:
+            ratio.append((game[-4] / (game[-4] + game[-3])) * game[-2] ** (1 / 32))
+            release_date.append(
+                (int(str(game[2])[0:4]) - 1970) * 372 +
+                (int(str(game[2])[5:7]) - 1) * 31 +
+                int(str(game[2])[-2:]) - 1
+            )
+
+        # Plot the scatter plot and regression line
+        ax.scatter(release_date, ratio, s=0.5, color='blue', label='Game Ratings')
+        A, B = lineare_regressie2(release_date, ratio, 10000, 0.000001)
+        xpoints = [min(release_date), max(release_date)]
+        ypoints = [A + B * min(release_date), A + B * max(release_date)]
+        ax.plot(xpoints, ypoints, color='red', label='Regression Line')
+
+        # Customize the plot
+        ax.set_title("Game Ratings Over Time")
+        ax.set_xlabel("Release Date (Days Since Jan 1, 1970)")
+        ax.set_ylabel("Positive Rating Ratio")
+        ax.legend()
+
+        # Create a canvas to embed the plot in PyQt
+        canvas = FigureCanvas(figure)
+        canvas.draw()  # This ensures the plot is rendered
+        return canvas
+
+    def fetch_random_games(self, table_widget):
+        # Clear the table
+        table_widget.setRowCount(0)
+
+        # SQL query to get 5 random games
+        query = """
+            SELECT name, release_date, price
+            FROM games
+            ORDER BY RANDOM()
+            LIMIT 5;
+        """
+        cursor.execute(query)
+        games = cursor.fetchall()
+
+        # Populate the table with random games
+        table_widget.setRowCount(len(games))
+        for row_index, game in enumerate(games):
+            for col_index, value in enumerate(game):
+                table_widget.setItem(row_index, col_index, QTableWidgetItem(str(value)))
 
     def plan_game_session(self, game_input, date_input, time_input, description_input):
         game_name = game_input.text()
