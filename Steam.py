@@ -7,15 +7,16 @@ import psycopg2
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QListWidget, QStackedWidget, QPushButton, QLineEdit, QTableWidget,
-    QTableWidgetItem, QMessageBox, QHeaderView, QSizePolicy, QFileDialog, QSplitter,
+    QTableWidgetItem, QMessageBox, QHeaderView, QSizePolicy, QFileDialog, QSplitter, QDateEdit, QTimeEdit, QGroupBox,
 )
-from PyQt5.QtGui import QFont, QIcon, QBrush, QPainter, QPainterPath
+from PyQt5.QtGui import QFont, QIcon, QBrush, QPainter, QPainterPath, QColor
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer, QDate, QTime
 
 connection_string = "host='4.234.56.16' dbname='Steam' user='postgres' password='mggfgg55'"
 conn = psycopg2.connect(connection_string)
 cursor = conn.cursor()
+
 
 import os
 
@@ -51,7 +52,7 @@ class SteamApp(QMainWindow):
 
         # de navigation bar, dus om naar andere pages te komen
         self.navigation = QListWidget()
-        self.navigation.addItems(['Home', 'Library', 'Games', 'Friends', 'Profile'])
+        self.navigation.addItems(['Home', 'Library', 'Games', 'Friends', 'Sessions', 'Profile'])
         self.navigation.setStyleSheet("""
                     font-size: 20px;
                     font-weight: bold;
@@ -70,12 +71,14 @@ class SteamApp(QMainWindow):
         self.library_page = self.library_page()
         self.games_page = self.games_page()
         self.friends_page = self.friends_page()
+        self.sessions_page = self.sessions_page()
         self.profile_page = self.profile_page()
 
         self.content_area.addWidget(QWidget())
         self.content_area.addWidget(self.library_page)
         self.content_area.addWidget(self.games_page)
         self.content_area.addWidget(self.friends_page)
+        self.content_area.addWidget(self.sessions_page)
         self.content_area.addWidget(self.profile_page)
 
     def create_page(self, title, description):
@@ -223,67 +226,97 @@ class SteamApp(QMainWindow):
     def games_page(self):
         page = QWidget()
         layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignTop)
         page.setLayout(layout)
 
-        # weer de search box
+        # Section: Search Games
+        search_label = QLabel("Search Games")
+        search_label.setStyleSheet("font-size: 25px; font-weight: bold; color: white;")
+        layout.addWidget(search_label)
+
         search_box = QLineEdit()
         search_box.setPlaceholderText("Enter game name to search")
         search_box.setStyleSheet("""
-                    font-size: 20px;
-                    font-weight: bold;
-                    color: white; 
-                    background-color: #293e4f;
-
-                """)
+                            font-size: 20px;
+                            font-weight: bold;
+                            color: white; 
+                            background-color: #293e4f;
+                        """)
         layout.addWidget(search_box)
 
-        # weer de search button
         search_button = QPushButton("Search")
         search_button.setStyleSheet("""
                     font-size: 20px;
                     font-weight: bold;
                     color: white; 
                     background-color: #293e4f;
-
                 """)
         layout.addWidget(search_button)
 
-        # de results table
         results_table = QTableWidget()
         results_table.setColumnCount(1)
         results_table.setHorizontalHeaderLabels(["Game Name"])
+        results_table.setFont(QFont("Arial", 15))
         results_table.setStyleSheet("""
-                            QTableWidget {
-                                background-color: #293e4f; 
-                                color: white; 
-                            }
-                            QHeaderView::section {
-                                background-color: #1f2a38; 
-                                color: white; 
-                                font-weight: bold; 
-                            }
-                            QTableWidget::item {
-                                background-color: #293e4f; 
-                                color: white; 
-                            }
-                       """)
-        layout.addWidget(results_table)
-
+            QTableWidget {
+                background-color: #293e4f;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #1f2a38;
+                color: white;
+                font-weight: bold;
+            }
+            QTableWidget::item {
+                background-color: #293e4f;
+                color: white;
+            }
+        """)
         results_table.horizontalHeader().setStretchLastSection(True)
         results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         results_table.verticalHeader().setVisible(False)
-        results_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout.addWidget(results_table)
 
-        # connection tussen button en actie
+        # Section: Most Played Games
+        most_played_label = QLabel("Most Played Games")
+        most_played_label.setStyleSheet("font-size: 25px; font-weight: bold; color: white;")
+        layout.addWidget(most_played_label)
+
+        most_played_table = QTableWidget()
+        most_played_table.setColumnCount(2)
+        most_played_table.setHorizontalHeaderLabels(["Game Name", "Average Hours Played"])
+        most_played_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #293e4f;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #1f2a38;
+                color: white;
+                font-weight: bold;
+            }
+            QTableWidget::item {
+                background-color: #293e4f;
+                color: white;
+            }
+        """)
+        most_played_table.horizontalHeader().setStretchLastSection(True)
+        most_played_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        most_played_table.verticalHeader().setVisible(False)
+        layout.addWidget(most_played_table)
+
+        # Connect buttons to functions
         search_button.clicked.connect(lambda: self.search_games(search_box, results_table))
+        self.view_most_played_games(most_played_table)
 
         return page
 
     def friends_page(self):
         page = QWidget()
-        main_layout = QVBoxLayout(page)
+        layout = QVBoxLayout()
+        page.setLayout(layout)
 
-        # hiermee kan je de username van user invoeren
+        # Section: Add a Friend
         username_input = QLineEdit()
         username_input.setPlaceholderText("Enter friend's username")
         username_input.setStyleSheet("""
@@ -292,9 +325,8 @@ class SteamApp(QMainWindow):
             color: white; 
             background-color: #293e4f;
         """)
-        main_layout.addWidget(username_input)
+        layout.addWidget(username_input)
 
-        # knop om friends te adden
         add_friend_button = QPushButton("Add Friend")
         add_friend_button.setStyleSheet("""
             font-size: 20px;
@@ -302,12 +334,12 @@ class SteamApp(QMainWindow):
             color: white; 
             background-color: #293e4f;
         """)
-        main_layout.addWidget(add_friend_button)
+        layout.addWidget(add_friend_button)
 
-        # friends list
+        # Section: Friends List with Status
         friends_table = QTableWidget()
-        friends_table.setColumnCount(1)
-        friends_table.setHorizontalHeaderLabels(["Username"])
+        friends_table.setColumnCount(2)
+        friends_table.setHorizontalHeaderLabels(["Username", "Status"])
         friends_table.setStyleSheet("""
             QTableWidget {
                 background-color: #293e4f; 
@@ -323,12 +355,15 @@ class SteamApp(QMainWindow):
                 color: white; 
             }
         """)
+        layout.addWidget(friends_table)
+
         friends_table.horizontalHeader().setStretchLastSection(True)
         friends_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         friends_table.verticalHeader().setVisible(False)
-        main_layout.addWidget(friends_table)
 
-        # hiermee kan je de library van je friend zien
+        library_layout = QVBoxLayout()
+
+        # Section: View Friend's Library
         view_library_button = QPushButton("View Friend's Library")
         view_library_button.setStyleSheet("""
             font-size: 20px;
@@ -336,9 +371,8 @@ class SteamApp(QMainWindow):
             color: white; 
             background-color: #293e4f;
         """)
-        main_layout.addWidget(view_library_button)
+        library_layout.addWidget(view_library_button)
 
-        # library content
         library_table = QTableWidget()
         library_table.setColumnCount(2)
         library_table.setHorizontalHeaderLabels(["Game Name", "Hours Played"])
@@ -360,22 +394,154 @@ class SteamApp(QMainWindow):
         library_table.horizontalHeader().setStretchLastSection(True)
         library_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         library_table.verticalHeader().setVisible(False)
-        main_layout.addWidget(library_table)
 
+        library_table.setFixedHeight(200)
 
-        main_layout.setStretch(0, 1)
-        main_layout.setStretch(1, 1)
-        main_layout.setStretch(2, 3)
-        main_layout.setStretch(3, 1)
-        main_layout.setStretch(4, 3)
+        library_layout.addWidget(library_table)
+        layout.addLayout(library_layout)
 
-        # Connect buttons to actions
         add_friend_button.clicked.connect(lambda: self.add_friend(username_input, friends_table))
         view_library_button.clicked.connect(lambda: self.view_friend_library(friends_table, library_table))
 
-        self.view_friends(friends_table)
+        self.view_friends_with_status(friends_table)
 
         return page
+
+    def sessions_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+
+        # Section: Your Planned Sessions
+        section_label = QLabel("Your Planned Sessions")
+        section_label.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        layout.addWidget(section_label)
+
+        your_sessions_table = QTableWidget()
+        your_sessions_table.setColumnCount(4)
+        your_sessions_table.setHorizontalHeaderLabels(["Game", "Date", "Time", "Description"])
+        your_sessions_table.setStyleSheet("""
+                    QTableWidget {
+                        background-color: #293e4f; 
+                        color: white; 
+                    }
+                    QHeaderView::section {
+                        background-color: #1f2a38; 
+                        color: white; 
+                        font-weight: bold; 
+                    }
+                    QTableWidget::item {
+                        background-color: #293e4f; 
+                        color: white; 
+                    }
+                """)
+        your_sessions_table.horizontalHeader().setStretchLastSection(True)
+        your_sessions_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        your_sessions_table.verticalHeader().setVisible(False)
+        layout.addWidget(your_sessions_table)
+        self.view_your_sessions(your_sessions_table)
+
+        # Section: Friends' Planned Sessions
+        section_label = QLabel("Friends' Planned Sessions")
+        section_label.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        layout.addWidget(section_label)
+
+        friends_sessions_table = QTableWidget()
+        friends_sessions_table.setColumnCount(4)
+        friends_sessions_table.setHorizontalHeaderLabels(["Friend", "Game", "Date", "Time"])
+        friends_sessions_table.setStyleSheet("""
+                            QTableWidget {
+                                background-color: #293e4f; 
+                                color: white; 
+                            }
+                            QHeaderView::section {
+                                background-color: #1f2a38; 
+                                color: white; 
+                                font-weight: bold; 
+                            }
+                            QTableWidget::item {
+                                background-color: #293e4f; 
+                                color: white; 
+                            }
+                        """)
+        friends_sessions_table.horizontalHeader().setStretchLastSection(True)
+        friends_sessions_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        friends_sessions_table.verticalHeader().setVisible(False)
+        layout.addWidget(friends_sessions_table)
+        self.view_friends_sessions(friends_sessions_table)
+
+        # Section: Plan a New Session
+        section_label = QLabel("Plan Your Gaming Session")
+        section_label.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        layout.addWidget(section_label)
+
+        game_input = QLineEdit()
+        game_input.setPlaceholderText("Enter game name")
+        game_input.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        layout.addWidget(game_input)
+
+        date_input = QDateEdit()
+        date_input.setCalendarPopup(True)
+        date_input.setDate(QDate.currentDate())
+        date_input.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        layout.addWidget(date_input)
+
+        time_input = QTimeEdit()
+        time_input.setTime(QTime.currentTime())
+        time_input.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        layout.addWidget(time_input)
+
+        description_input = QLineEdit()
+        description_input.setPlaceholderText("Add a description (optional)")
+        description_input.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        layout.addWidget(description_input)
+
+        plan_button = QPushButton("Plan Session")
+        plan_button.setStyleSheet("""
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: white; 
+                    background-color: #293e4f;
+                """)
+        plan_button.clicked.connect(lambda: self.plan_game_session(game_input, date_input, time_input, description_input))
+        layout.addWidget(plan_button)
+
+        return page
+
 
     def profile_page(self):
         page = QWidget()
@@ -468,6 +634,99 @@ class SteamApp(QMainWindow):
         logout_button.clicked.connect(self.logout)
 
         return page
+
+
+
+    def plan_game_session(self, game_input, date_input, time_input, description_input):
+        game_name = game_input.text()
+        session_date = date_input.date().toString("yyyy-MM-dd")
+        session_time = time_input.time().toString("HH:mm:ss")
+        description = description_input.text()
+
+        if not game_name:
+            QMessageBox.warning(self, "Error", "Please enter a game name.")
+            return
+
+        query = """
+            INSERT INTO game_sessions (accountnr, game_name, session_date, session_time, description)
+            VALUES (%s, %s, %s, %s, %s);
+        """
+        try:
+            cursor.execute(query, (self.accountnr, game_name, session_date, session_time, description))
+            conn.commit()
+            QMessageBox.information(self, "Success", "Gaming session planned!")
+            game_input.clear()
+            description_input.clear()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to plan session: {str(e)}")
+
+    def view_your_sessions(self, your_sessions_table):
+        your_sessions_table.setRowCount(0)
+
+        query = """
+            SELECT game_name, session_date, session_time, description
+            FROM game_sessions
+            WHERE accountnr = %s
+            ORDER BY session_date, session_time;
+        """
+        cursor.execute(query, (self.accountnr,))
+        sessions = cursor.fetchall()
+
+        for row_num, (game_name, session_date, session_time, description) in enumerate(sessions):
+            your_sessions_table.insertRow(row_num)
+            your_sessions_table.setItem(row_num, 0, QTableWidgetItem(game_name))
+            your_sessions_table.setItem(row_num, 1, QTableWidgetItem(session_date.strftime("%Y-%m-%d")))
+            your_sessions_table.setItem(row_num, 2, QTableWidgetItem(session_time.strftime("%H:%M")))
+            your_sessions_table.setItem(row_num, 3, QTableWidgetItem(description or "No description"))
+
+    def view_friends_sessions(self, friends_sessions_table):
+        friends_sessions_table.setRowCount(0)
+
+        query = """
+            SELECT a.username, s.game_name, s.session_date, s.session_time
+            FROM game_sessions s
+            JOIN friends f ON s.accountnr = f.accountnr2
+            JOIN accounts a ON f.accountnr2 = a.accountnr
+            WHERE f.accountnr1 = %s
+            ORDER BY s.session_date, s.session_time;
+        """
+        cursor.execute(query, (self.accountnr,))
+        sessions = cursor.fetchall()
+
+        for row_num, (username, game_name, session_date, session_time) in enumerate(sessions):
+            friends_sessions_table.insertRow(row_num)
+            friends_sessions_table.setItem(row_num, 0, QTableWidgetItem(username))
+            friends_sessions_table.setItem(row_num, 1, QTableWidgetItem(game_name))
+            friends_sessions_table.setItem(row_num, 2, QTableWidgetItem(session_date.strftime("%Y-%m-%d")))
+            friends_sessions_table.setItem(row_num, 3, QTableWidgetItem(session_time.strftime("%H:%M")))
+
+    def update_status(self, username, status):
+        update_query = "UPDATE accounts SET status = %s WHERE username = %s;"
+        cursor.execute(update_query, (status, username))
+        conn.commit()
+
+    def view_friends_with_status(self, friends_table):
+        friends_table.setRowCount(0)
+
+        query = """
+            SELECT a.username, a.status
+            FROM accounts a
+            JOIN friends f ON a.accountnr = f.accountnr2
+            WHERE f.accountnr1 = %s;
+        """
+        cursor.execute(query, (self.accountnr,))
+        friends = cursor.fetchall()
+
+        for row_num, (username, status) in enumerate(friends):
+            friends_table.insertRow(row_num)
+            friends_table.setItem(row_num, 0, QTableWidgetItem(username))
+
+            # Create a status label with color coding
+            status_label = QLabel("Online" if status == "online" else "Offline")
+            status_label.setStyleSheet(
+                "color: green;" if status == "online" else "color: red;"
+            )
+            friends_table.setCellWidget(row_num, 1, status_label)
 
     def load_avatar(self):
         avatar_path = f"./avatars/user_{self.accountnr}.png"
@@ -640,6 +899,44 @@ class SteamApp(QMainWindow):
         except psycopg2.Error as e:
             QMessageBox.warning(self, "Error", f"Could not add friend: {e}")
 
+    def view_most_played_games(self, games_table):
+        games_table.setRowCount(0)
+
+        query = """
+            SELECT name, average_playtime
+            FROM games
+            GROUP BY name, average_playtime
+            ORDER BY average_playtime DESC
+            LIMIT 10;
+        """
+        cursor.execute(query)
+        games = cursor.fetchall()
+
+        for row_num, (name, average_playtime) in enumerate(games):
+            games_table.insertRow(row_num)
+            games_table.setItem(row_num, 0, QTableWidgetItem(name))
+            games_table.setItem(row_num, 1, QTableWidgetItem(f"{average_playtime:.2f}"))
+
+    def filter_games(self, search_text, games_table):
+        for row in range(games_table.rowCount()):
+            item = games_table.item(row, 0)
+            if search_text.lower() in item.text().lower():
+                games_table.setRowHidden(row, False)
+            else:
+                games_table.setRowHidden(row, True)
+
+    def start_status_check(self):
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.view_friends)
+        self.timer.start(5000)  # Check every 5 seconds
+
+    def closeEvent(self, event):
+        self.logout()
+        event.accept()
+
+
+
+
     def view_friends(self, friends_table):
         try:
             conn = psycopg2.connect(connection_string)
@@ -745,8 +1042,13 @@ class SteamApp(QMainWindow):
         self.content_area.setCurrentIndex(index)
 
     def logout(self):
-        print("Logging out...")
+        query = "DELETE FROM active_sessions WHERE accountnr = %s;"
+        cursor.execute(query, (self.accountnr,))
+        conn.commit()
         self.close()
+        print("Logging out...")
+
+
 
     def change_password(self, password_input):
         new_password = password_input.text()
@@ -823,7 +1125,9 @@ class LoginPage(ctk.CTk):
             accountnr_query = "SELECT accountnr FROM accounts WHERE username = %s;"
             cursor.execute(accountnr_query, (username,))
             accountnr = cursor.fetchone()
-
+            query = "UPDATE accounts SET status = 'online' WHERE accountnr = %s;"
+            cursor.execute(query, (accountnr,))
+            conn.commit()
             if accountnr:
                 self.open_main_app(accountnr[0])
             else:
