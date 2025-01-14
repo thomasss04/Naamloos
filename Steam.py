@@ -1,7 +1,6 @@
 import hashlib
 import shutil
-import math
-import matplotlib.pyplot as plt
+
 
 import customtkinter as ctk
 import tkinter.messagebox as tkmb
@@ -14,13 +13,12 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont, QIcon, QBrush, QPainter, QPainterPath
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, QTimer, QDate, QTime
-from matplotlib.backends.backend_template import FigureCanvas
+
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
 
-from test import lineare_regressie2
+
+
 
 connection_string = "host='4.234.56.16' dbname='Steam' user='postgres' password='mggfgg55'"
 conn = psycopg2.connect(connection_string)
@@ -91,32 +89,27 @@ class SteamApp(QMainWindow):
         self.content_area.addWidget(self.sessions_page)
         self.content_area.addWidget(self.profile_page)
 
-    def display_home_page(self):
-        home_widget = QWidget()
-        layout = QVBoxLayout(home_widget)
-
-        # Add the plot to the layout
-        layout.addWidget(self.scatter_plot())
-
-        # Set the home widget to be the current page
-        self.content_area.addWidget(home_widget)
-        self.content_area.setCurrentWidget(home_widget)
 
     def home_page(self):
         page = QWidget()
         layout = QVBoxLayout()
         page.setLayout(layout)
 
-        # Welcome label
+
         welcome_label = QLabel("Welcome to the Steam App!")
         welcome_label.setStyleSheet("font-size: 30px; font-weight: bold; color: white;")
         layout.addWidget(welcome_label)
 
-        # Add the scatter plot to the layout
-        plot_canvas = self.scatter_plot()
-        layout.addWidget(plot_canvas)
+        # label voor de statistiek
+        self.image_label = QLabel()
+        self.pixmap = QPixmap('./voorspellende_statistiek.png')
+        self.image_label.setPixmap(self.pixmap.scaled(1000, 500, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        layout.addWidget(self.image_label)
+
 
         return page
+
+
 
     def library_page(self):
         page = QWidget()
@@ -252,7 +245,7 @@ class SteamApp(QMainWindow):
         layout.setAlignment(Qt.AlignTop)
         page.setLayout(layout)
 
-        # Section: Search Games
+        # hiermee kan je de games opzoeken
         search_label = QLabel("Search Games")
         search_label.setStyleSheet("font-size: 25px; font-weight: bold; color: white;")
         layout.addWidget(search_label)
@@ -300,7 +293,7 @@ class SteamApp(QMainWindow):
         results_table.verticalHeader().setVisible(False)
         layout.addWidget(results_table)
 
-        # Section: Most Played Games
+        # de meest gespeelde games
         most_played_label = QLabel("Most Played Games")
         most_played_label.setStyleSheet("font-size: 25px; font-weight: bold; color: white;")
         layout.addWidget(most_played_label)
@@ -337,7 +330,7 @@ class SteamApp(QMainWindow):
         """)
         layout.addWidget(random_games_button)
 
-        # Add Table to Display Random Games
+        # hier laat hij 5 random games zien
         random_games_table = QTableWidget()
         random_games_table.setColumnCount(3)
         random_games_table.setHorizontalHeaderLabels(["Name", "Release Date", "Price"])
@@ -362,7 +355,6 @@ class SteamApp(QMainWindow):
         random_games_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         random_games_table.verticalHeader().setVisible(False)
 
-        # Connect Button to the Function
         random_games_button.clicked.connect(lambda: self.fetch_random_games(random_games_table))
         search_button.clicked.connect(lambda: self.search_games(search_box, results_table))
         self.view_most_played_games(most_played_table)
@@ -374,7 +366,7 @@ class SteamApp(QMainWindow):
         layout = QVBoxLayout()
         page.setLayout(layout)
 
-        # Section: Add a Friend
+        # hiermee kan je vrienden toevoegen
         username_input = QLineEdit()
         username_input.setPlaceholderText("Enter friend's username")
         username_input.setStyleSheet("""
@@ -394,7 +386,7 @@ class SteamApp(QMainWindow):
         """)
         layout.addWidget(add_friend_button)
 
-        # Section: Friends List with Status
+        # dit is de status van de vrienden
         friends_table = QTableWidget()
         friends_table.setColumnCount(2)
         friends_table.setHorizontalHeaderLabels(["Username", "Status"])
@@ -421,7 +413,7 @@ class SteamApp(QMainWindow):
 
         library_layout = QVBoxLayout()
 
-        # Section: View Friend's Library
+        # hier zie je de library van de vriend die is geselecteerd
         view_library_button = QPushButton("View Friend's Library")
         view_library_button.setStyleSheet("""
             font-size: 20px;
@@ -469,7 +461,7 @@ class SteamApp(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        # Section: Your Planned Sessions
+        # hier zie je je eigen geplande sessies
         section_label = QLabel("Your Planned Sessions")
         section_label.setStyleSheet("""
                     font-size: 20px;
@@ -503,7 +495,7 @@ class SteamApp(QMainWindow):
         layout.addWidget(your_sessions_table)
         self.view_your_sessions(your_sessions_table)
 
-        # Section: Friends' Planned Sessions
+        # de geplande sessies van je vrienden
         section_label = QLabel("Friends' Planned Sessions")
         section_label.setStyleSheet("""
                     font-size: 20px;
@@ -537,7 +529,7 @@ class SteamApp(QMainWindow):
         layout.addWidget(friends_sessions_table)
         self.view_friends_sessions(friends_sessions_table)
 
-        # Section: Plan a New Session
+        # hier kan je een nieuwe sessie inplannen
         section_label = QLabel("Plan Your Gaming Session")
         section_label.setStyleSheet("""
                     font-size: 20px;
@@ -695,83 +687,11 @@ class SteamApp(QMainWindow):
 
 
 
-    def lineare_regressie1(listX, listY, itterations, learningrate):
-        a = 0
-        b = 0
-        for i in range(itterations):
-            for j in range(len(listX)):
-                error = (a + b * listX[j]) - listY[j]
-                a = a - error * learningrate * 10000
-                b = b - error * learningrate * listX[j]
-        print(error, a, b)
-        return a, b
 
-    def lineare_regressie2(listX, listY, itterations, learningrate):
-        a = 0
-        b = 0
-        for i in range(itterations):
-            errorA = 0
-            errorB = 0
-            SSE = 0
-            for j in range(len(listX)):
-                errorA = errorA + 2 * a + 2 * b * listX[j] - 2 * listY[j]
-                errorB = errorB + 2 * a * listX[j] - 2 * listY[j] * listX[j] + 2 * b * listX[j] ** 2
-                SSE = SSE + ((a + b * listX[j]) - listY[j]) ** 2
-            if abs(errorA) > 10:
-                a = a - errorA * learningrate
-            if abs(errorB) > 100000:
-                b = b - min(abs(SSE / errorB), abs(errorB)) * errorB / abs(errorB) * learningrate
-        return a, b
-
-    def scatter_plot(self):
-        # Create a Matplotlib figure and axis
-        figure = Figure()
-        ax = figure.add_subplot(111)
-
-        # Data retrieval from the database
-        owners = []
-        ratio = []
-        release_date = []
-        query = """
-            SELECT appid, name, release_date, positive_ratings, negative_ratings, owners, price
-            FROM games
-            WHERE positive_ratings > 0 AND (negative_ratings + positive_ratings > 50)
-        """
-        cursor.execute(query)
-        data = cursor.fetchall()
-
-        # Process the data for plotting
-        for game in data:
-            ratio.append((game[-4] / (game[-4] + game[-3])) * game[-2] ** (1 / 32))
-            release_date.append(
-                (int(str(game[2])[0:4]) - 1970) * 372 +
-                (int(str(game[2])[5:7]) - 1) * 31 +
-                int(str(game[2])[-2:]) - 1
-            )
-
-        # Plot the scatter plot and regression line
-        ax.scatter(release_date, ratio, s=0.5, color='blue', label='Game Ratings')
-        A, B = lineare_regressie2(release_date, ratio, 10000, 0.000001)
-        xpoints = [min(release_date), max(release_date)]
-        ypoints = [A + B * min(release_date), A + B * max(release_date)]
-        ax.plot(xpoints, ypoints, color='red', label='Regression Line')
-
-        # Customize the plot
-        ax.set_title("Game Ratings Over Time")
-        ax.set_xlabel("Release Date (Days Since Jan 1, 1970)")
-        ax.set_ylabel("Positive Rating Ratio")
-        ax.legend()
-
-        # Create a canvas to embed the plot in PyQt
-        canvas = FigureCanvas(figure)
-        canvas.draw()  # This ensures the plot is rendered
-        return canvas
 
     def fetch_random_games(self, table_widget):
-        # Clear the table
         table_widget.setRowCount(0)
 
-        # SQL query to get 5 random games
         query = """
             SELECT name, release_date, price
             FROM games
@@ -781,7 +701,6 @@ class SteamApp(QMainWindow):
         cursor.execute(query)
         games = cursor.fetchall()
 
-        # Populate the table with random games
         table_widget.setRowCount(len(games))
         for row_index, game in enumerate(games):
             for col_index, value in enumerate(game):
@@ -871,7 +790,7 @@ class SteamApp(QMainWindow):
             friends_table.insertRow(row_num)
             friends_table.setItem(row_num, 0, QTableWidgetItem(username))
 
-            # Create a status label with color coding
+            # hier wordt gekeken of de vrienden offline of online zijn
             status_label = QLabel("Online" if status == "online" else "Offline")
             status_label.setStyleSheet(
                 "color: green;" if status == "online" else "color: red;"
@@ -1083,9 +1002,6 @@ class SteamApp(QMainWindow):
     def closeEvent(self, event):
         self.logout()
         event.accept()
-
-
-
 
     def view_friends(self, friends_table):
         try:
